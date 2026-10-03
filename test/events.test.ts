@@ -22,7 +22,7 @@ export function receiver(options: { echo?: boolean; status?: number } = {}) {
 }
 export const publicDns = async () => [{ address: "104.18.1.1" }];
 export const subscribeParams = { name: EVENT, arguments: {}, delivery: { mode: "webhook", url: "https://hooks.chatgpt.com/mcp-events/cb_1", secret: SECRET }, cursor: null };
-const message = { message_id: "1791024888216", text: "hey", received_at: "2026-10-03T10:54:48.216Z", attachments: [] };
+const message = { message_id: "1791024888216", kind: "message" as const, text: "hey", received_at: "2026-10-03T10:54:48.216Z", attachments: [] };
 
 describe("Standard Webhooks signing", () => {
   test("matches the Standard Webhooks reference vector", () => {

@@ -16,7 +16,15 @@ const RETRIES = [1_000, 3_000, 9_000];
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 type Resolve = (host: string) => Promise<Array<{ address: string }>>;
 type Subscription = { id: string; name: string; url: string; secret: string; expiresAt: number };
-export type SignalEventData = { message_id: string; text: string; received_at: string; attachments: string[] };
+export type SignalEventData = {
+  message_id: string;
+  kind: "message" | "reaction";
+  text: string;
+  received_at: string;
+  attachments: Array<{ id: string; content_type: string; filename?: string; size?: number; transcript?: string }>;
+  reply_to_message_id?: string;
+  reaction?: { emoji: string; target_message_id: string; target_text?: string; removed: boolean };
+};
 
 export class RpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: object) { super(message); }
