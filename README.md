@@ -119,6 +119,13 @@ When the agent has a message, the server marks the owner's message read and show
 | `SIGNAL_ATTACHMENTS_DIR` | Where signal-cli keeps attachments, default `~/.local/share/signal-cli/attachments` |
 | `SIGNAL_MCP_PORT` | Local port, default `23387` |
 | `SIGNAL_MCP_STATE` | Where subscriptions and sign-ins are kept, default `~/.config/signal-mcp` |
+| `SIGNAL_RELAY_TOKEN` | Turns on `POST /relay` (see below) and is the only key it accepts; off when unset |
+
+### Relay: `POST /relay`
+
+Lets a helper on the same machine, such as a home voice assistant, pass the agent a message for the owner. Send `{"text": "...", "from": "Jarvis"}` with `authorization: Bearer $SIGNAL_RELAY_TOKEN` to `http://127.0.0.1:23387/relay`. The agent gets it as a normal `signal.message.received` event whose text starts with "(Relayed by Jarvis, not typed on <owner>'s Signal; who said it is not verified)", and answers on Signal as usual. The answer is `{"delivered": <subscriptions>}`.
+
+The relay token can do nothing else, and requests that came through the HTTPS proxy (with forwarding headers) get a 404, so only programs on the machine itself can relay. Whoever can speak to the helper can message the agent as the owner would, so put a check in the helper (the voice hub asks for the owner's approval on his phone).
 
 ### Security
 

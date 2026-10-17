@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { attachmentPath, outgoing, readForAgent, transcribe } from "./attachments";
+import { hasBearerToken } from "./auth";
 import { SignalEvents, type SignalEventData } from "./events";
 import { handleMcp, type Logged } from "./mcp";
 import { OAuth } from "./oauth";
@@ -15,6 +16,7 @@ const port = Number(process.env.SIGNAL_MCP_PORT || 23387);
 const stateDir = process.env.SIGNAL_MCP_STATE?.trim() || join(homedir(), ".config/signal-mcp");
 const attachmentsDir = process.env.SIGNAL_ATTACHMENTS_DIR?.trim() || join(homedir(), ".local/share/signal-cli/attachments");
 const transcribeCommand = process.env.SIGNAL_TRANSCRIBE_COMMAND?.trim() || undefined;
+const relayToken = process.env.SIGNAL_RELAY_TOKEN?.trim() || undefined;
 const events = new SignalEvents(join(stateDir, "subscriptions.json"));
 // the public base URL the agent sees (a proxy in front may add a path prefix and strip it before requests arrive here)
 const oauth = new OAuth(join(stateDir, "oauth.json"), need("SIGNAL_MCP_PUBLIC_URL"), need("SIGNAL_MCP_TOKEN"));
@@ -44,7 +46,7 @@ Bun.serve({
   hostname: "127.0.0.1",
   port,
   maxRequestBodySize: 40 * 1024 * 1024, // base64 attachments
-  fetch: async (request) => await oauth.handle(request) ?? handleMcp(request, {
+  fetch: async (request) => new URL(request.url).pathname === "/relay" ? relay(request) : await oauth.handle(request) ?? handleMcp(request, {
     authorized: (header) => oauth.authorized(header),
     resourceMetadataUrl: oauth.resourceMetadataUrl,
     events,
@@ -81,9 +83,29 @@ console.log(`[signal-mcp] listening on 127.0.0.1:${port}/mcp; ${(await events.ac
 async function deliver(data: SignalEventData, markRead: boolean) {
   const accepted = await events.deliver(data);
   console.log(`[signal-mcp] ${data.kind} ${data.message_id} delivered to ${accepted} subscription(s)`);
-  if (!accepted || !markRead) return;
+  if (!accepted || !markRead) return accepted;
   signal.markRead(owner, [Number(data.message_id)]).catch(() => {});
   startTyping();
+  return accepted;
+}
+
+// POST /relay: a helper on this machine (a home voice assistant) passes the agent a message for the owner, as an
+// event like a Signal message, labelled as relayed. Off unless SIGNAL_RELAY_TOKEN is set; it needs that token, which
+// cannot do anything else, and is refused through the HTTPS proxy (forwarding headers): this machine only.
+async function relay(request: Request) {
+  const local = !request.headers.has("x-forwarded-for") && !request.headers.has("forwarded");
+  if (!relayToken || request.method !== "POST" || !local || !hasBearerToken(request.headers.get("authorization"), relayToken)) {
+    return new Response("Not found", { status: 404 });
+  }
+  const body = await request.json().catch(() => null) as { text?: unknown; from?: unknown } | null;
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
+  const from = typeof body?.from === "string" && body.from.trim() ? body.from.trim().slice(0, 60) : "a helper";
+  if (!text || text.length > 4000) return Response.json({ error: "text must be 1 to 4000 characters" }, { status: 400 });
+  const now = Date.now();
+  const said = `(Relayed by ${from}, not typed on ${ownerName}'s Signal; who said it is not verified) ${text}`;
+  remember({ id: String(now), from: "owner", text: said, at: new Date(now).toISOString() });
+  const delivered = await deliver({ message_id: String(now), kind: "message", text: said, received_at: new Date(now).toISOString(), attachments: [] }, false);
+  return Response.json({ delivered });
 }
 
 for await (const event of signal.events()) {
